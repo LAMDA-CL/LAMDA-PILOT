@@ -25,7 +25,6 @@ class Learner(BaseLearner):
         super().__init__(args)
 
         self._network = SimpleVitNet(args, True)
-        self. batch_size= args["batch_size"]
         
         self.args = args
 
