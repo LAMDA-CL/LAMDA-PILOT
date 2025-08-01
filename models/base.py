@@ -444,3 +444,17 @@ class BaseLearner(object):
                
                 self._class_means[class_idx, :] = class_mean
                 self._class_covs[class_idx, ...] = class_cov
+
+    def _eval_get_logits(self):
+        self._network.eval()
+        outputs,y_true = [], []
+        for _, (_, inputs, targets) in enumerate(self.test_loader):
+            inputs = inputs.to(self._device)
+            with torch.no_grad():
+                output = self._network(inputs)["logits"]
+            outputs.append(output)
+            y_true.append(targets.cpu().numpy())
+        outputs_total = torch.cat(outputs, dim=0)
+        y_true_total = np.concatenate(y_true, axis=0)
+
+        return outputs_total, y_true_total
