@@ -27,7 +27,7 @@ def get_backbone(args, pretrained=False):
             return _basenet, _adaptive_net
     # SSF 
     elif '_ssf' in name:
-        if args["model_name"] == "aper_ssf"  or args["model_name"] == "ranpac" or args["model_name"] == "fecam":
+        if args["model_name"] == "aper_ssf"  or args["model_name"] == "ranpac" or args["model_name"] == "fecam" or args["model_name"] == 'incsar':
             from backbone import vit_ssf
             if name == "pretrained_vit_b16_224_ssf":
                 model = timm.create_model("vit_base_patch16_224_ssf", pretrained=True, num_classes=0)
@@ -231,6 +231,11 @@ def get_backbone(args, pretrained=False):
             else:
                 raise NotImplementedError("Unknown type {}".format(name))
             return model
+    elif 'sar_cnn' in name:
+        from backbone.incsar import sar_cnn
+        model = sar_cnn()
+        model.out_dim= 1152
+        return model.eval()
     else:
         raise NotImplementedError("Unknown type {}".format(name))
 

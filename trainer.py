@@ -16,7 +16,10 @@ def train(args):
     for seed in seed_list:
         args["seed"] = seed
         args["device"] = device
-        _train(args)
+        if args["model_name"] != 'incsar':
+            _train(args)
+        else:
+            _train_incsar(args)
 
 
 def _train(args):
@@ -141,6 +144,113 @@ def _train(args):
             print(np_acctable)
         logging.info('Forgetting (NME): {}'.format(forgetting))
 
+def _train_incsar(args):
+    from utils.toolkit import accuracy
+
+    init_cls = 0 if args ["init_cls"] == args["increment"] else args["init_cls"]
+    logs_name = "logs/{}/{}/{}/{}".format(args["model_name"],args["dataset"], init_cls, args['increment'])
+    
+    if not os.path.exists(logs_name):
+        os.makedirs(logs_name)
+
+    logfilename = "logs/{}/{}/{}/{}/{}_{}_{}".format(
+        args["model_name"],
+        args["dataset"],
+        init_cls,
+        args["increment"],
+        args["prefix"],
+        args["seed"],
+        args["backbone_type_vit"],
+    )
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(filename)s] => %(message)s",
+        handlers=[
+            logging.FileHandler(filename=logfilename + ".log"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+    _set_random(args["seed"])
+    _set_device(args)
+    print_args(args)
+
+    args_vit = copy.deepcopy(args)
+    args_vit["backbone_type"] = args["backbone_type_vit"]
+    args_vit["tuned_epoch"]= args["tuned_epoch_vit"]
+    
+    data_manager_vit = DataManager(
+        args["dataset"],
+        args["shuffle"],
+        args["seed"],
+        args["init_cls"],
+        args["increment"],
+        args_vit,
+    )
+    
+    args_vit["nb_classes"] = data_manager_vit.nb_classes # update args
+    args_vit["nb_tasks"] = data_manager_vit.nb_tasks
+    model_vit = factory.get_model(args_vit["model_name"], args_vit)
+    
+    args_cnn = copy.deepcopy(args)
+    args_cnn["backbone_type"] = args["backbone_type_cnn"]
+    args_cnn["tuned_epoch"]= args["tuned_epoch_cnn"]
+    
+    data_manager_cnn = DataManager(
+        args["dataset"],
+        args["shuffle"],
+        args["seed"],
+        args["init_cls"],
+        args["increment"],
+        args_cnn,
+    )
+    
+    args_cnn["nb_classes"] = data_manager_cnn.nb_classes # update args
+    args_cnn["nb_tasks"] = data_manager_cnn.nb_tasks
+    model_cnn = factory.get_model(args_cnn["model_name"], args_cnn)
+
+    cnn_curve, nme_curve = {"top1": [], "top5": []}, {"top1": [], "top5": []}
+    cnn_matrix, nme_matrix = [], []
+
+    for task in range(data_manager_vit.nb_tasks):
+        logging.info("ViT params: {}".format(count_parameters(model_vit._network)))
+        _set_random(args["seed"])
+        model_vit.incremental_train(data_manager_vit)
+        
+        logits_vit,y_true = model_vit._eval_get_logits()
+        model_vit.after_task()
+
+        logging.info("CNN params: {}".format(count_parameters(model_cnn._network)))
+        _set_random(args["seed"])
+        model_cnn.incremental_train(data_manager_cnn)
+        logits_cnn, _ = model_cnn._eval_get_logits()
+        model_cnn.after_task()
+
+        logits = (torch.nn.functional.softmax(logits_vit, dim=1) + torch.nn.functional.softmax(logits_cnn, dim=1)) / 2
+        predicts = torch.topk(logits, k=1, dim=1, largest=True, sorted=True)[1]  # [bs, topk]
+        predicts= predicts.cpu().numpy()
+        cnn_accy = {}
+        print(predicts.shape)
+        print(len(y_true))
+        grouped = accuracy(predicts.T[0], y_true, logits_vit.size()[1]-1, init_cls, args['increment'])
+        cnn_accy["grouped"] = grouped
+        cnn_accy["top1"] = grouped["total"]
+        cnn_accy["top{}".format(1)] = np.around(
+                (predicts.T == np.tile(y_true, (1, 1))).sum() * 100 / len(y_true),
+                decimals=2,
+            )
+        logging.info("Top-1 Accuracy per Task:: {}".format(cnn_accy["grouped"]))
+
+        cnn_keys = [key for key in cnn_accy["grouped"].keys() if '-' in key]
+        cnn_values = [cnn_accy["grouped"][key] for key in cnn_keys]
+        cnn_matrix.append(cnn_values)
+
+        cnn_curve["top1"].append(cnn_accy["top1"])
+
+        logging.info("Top-1 Accuracy curve: {}".format(cnn_curve["top1"]))
+        logging.info("Average Accuracy: {:.2f} \n".format(sum(cnn_curve["top1"])/len(cnn_curve["top1"])))
+
+    return cnn_curve["top1"], sum(cnn_curve["top1"])/len(cnn_curve["top1"])
 
 def _set_device(args):
     device_type = args["device"]

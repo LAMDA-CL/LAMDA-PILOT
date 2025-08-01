@@ -92,6 +92,36 @@ def build_transform_coda_prompt(is_train, args):
 
     return t
 
+def build_transform_incsar(is_train, args):
+    if args['backbone_type'] == 'sar_cnn':
+        input_size = 70
+        crop_size= 32
+    else:
+        input_size = 224
+        crop_size= 64
+
+    if is_train:
+        scale = (0.8, 1.0)
+        transform = [
+            transforms.CenterCrop(crop_size),
+            transforms.RandomResizedCrop(input_size, scale=scale),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ToTensor(),
+        ]
+    else:
+        if args['backbone_type'] == 'sar_cnn':
+            transform = [
+            transforms.CenterCrop(input_size),
+            transforms.ToTensor()
+            ]
+        else:
+            transform = [
+            transforms.CenterCrop(crop_size),
+            transforms.Resize(input_size),
+            transforms.ToTensor()
+            ]
+    return transform
+
 def build_transform(is_train, args):
     input_size = 224
     resize_im = input_size > 32
@@ -342,4 +372,24 @@ class vtab(iData):
         print(test_dset.class_to_idx)
 
         self.train_data, self.train_targets = split_images_labels(train_dset.imgs)
+        self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
+
+class mstar(iData):
+    
+    def __init__(self, args):
+        super().__init__()
+        self.use_path = True
+        self.common_trsf = [   ]
+
+        self.train_trsf = build_transform_incsar(True, args)
+        self.test_trsf = build_transform_incsar(False, args)
+        self.class_order = np.arange(10).tolist()
+    def download_data(self):
+        train_dir = "./datasets/MSTAR/train"
+        test_dir = "./datasets/MSTAR/test"
+        
+        train_dset = datasets.ImageFolder(train_dir)
+        test_dset = datasets.ImageFolder(test_dir)
+
+        self.train_data, self.train_targets = split_images_labels(train_dset.imgs)        
         self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
