@@ -436,11 +436,11 @@ class BaseLearner(object):
                 # vectors = np.concatenate([vectors_aug, vectors])
 
                 class_mean = np.mean(vectors, axis=0)
-                # class_cov = np.cov(vectors.T)
-                # try:
-                #     class_cov = torch.cov(torch.tensor(vectors, dtype=torch.float64).T) + torch.eye(class_mean.shape[-1]) * 1e-4
-                # except UserWarning as e:
-                #     logging.warning("Caught UserWarning: ", e)
+                class_cov = np.cov(vectors.T)
+                try:
+                    class_cov = torch.cov(torch.tensor(vectors, dtype=torch.float64).T) + torch.eye(class_mean.shape[-1]) * 1e-4
+                except UserWarning as e:
+                    logging.warning("Caught UserWarning: ", e)
                
                 self._class_means[class_idx, :] = class_mean
                 self._class_covs[class_idx, ...] = class_cov
